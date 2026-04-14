@@ -442,9 +442,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.svm import SVR
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, r2_score
+
+# ------------------------------
+# CONFIG
+# ------------------------------
+st.set_page_config(page_title="CrimeAI Dashboard", layout="wide")
 
 # ------------------------------
 # SIDEBAR
@@ -456,9 +463,11 @@ page = st.sidebar.radio(
     [
         "🏠 Home",
         "📊 Data Explorer",
+        "📊 EDA",
         "📉 Visualization",
         "🔥 Heatmap",
         "🤖 Train Model",
+        "📊 Model Comparison",
         "📈 Evaluation",
         "🧠 AI Insights",
         "🎯 Prediction"
@@ -475,8 +484,8 @@ if file:
 # HOME
 # ------------------------------
 if page == "🏠 Home":
-    st.title("CrimeAI Neural Dashboard")
-    st.info("Upload dataset to begin")
+    st.title("🚀 CrimeAI Dashboard")
+    st.info("Upload dataset to start")
 
 # ------------------------------
 # DATA EXPLORER
@@ -484,43 +493,52 @@ if page == "🏠 Home":
 elif page == "📊 Data Explorer":
     if "df" in st.session_state:
         df = st.session_state.df
-
-        st.subheader("Dataset Preview")
         st.dataframe(df.head())
-
         st.write("Shape:", df.shape)
+    else:
+        st.warning("Upload dataset first")
+
+# ------------------------------
+# EDA
+# ------------------------------
+elif page == "📊 EDA":
+    if "df" in st.session_state:
+        df = st.session_state.df
+
+        st.subheader("Summary")
+        st.write(df.describe())
+
+        st.subheader("Missing Values")
+        st.write(df.isnull().sum())
+
+        col = st.selectbox("Column", df.columns)
+
+        fig, ax = plt.subplots()
+        sns.histplot(df[col], kde=True, ax=ax)
+        st.pyplot(fig)
 
     else:
         st.warning("Upload dataset first")
 
 # ------------------------------
-# VISUALIZATION (NEW 🔥)
+# VISUALIZATION
 # ------------------------------
 elif page == "📉 Visualization":
     if "df" in st.session_state:
         df = st.session_state.df
 
-        st.subheader("Interactive Visualization")
-
         cols = st.multiselect("Select Columns", df.columns)
-
-        chart_type = st.selectbox(
-            "Select Chart Type",
-            ["Scatter", "Line", "Bar"]
-        )
+        chart = st.selectbox("Chart", ["Scatter", "Line", "Bar"])
 
         if len(cols) >= 2:
             fig, ax = plt.subplots()
 
-            if chart_type == "Scatter":
+            if chart == "Scatter":
                 ax.scatter(df[cols[0]], df[cols[1]])
-            elif chart_type == "Line":
+            elif chart == "Line":
                 ax.plot(df[cols[0]], df[cols[1]])
             else:
                 ax.bar(df[cols[0]], df[cols[1]])
-
-            ax.set_xlabel(cols[0])
-            ax.set_ylabel(cols[1])
 
             st.pyplot(fig)
 
@@ -536,7 +554,6 @@ elif page == "🔥 Heatmap":
 
         fig, ax = plt.subplots()
         sns.heatmap(df.corr(), annot=True, ax=ax)
-
         st.pyplot(fig)
 
     else:
@@ -550,6 +567,7 @@ elif page == "🤖 Train Model":
         df = st.session_state.df
 
         target = st.selectbox("Select Target", df.columns)
+        st.session_state.target = target
 
         X = df.drop(columns=[target])
         y = df[target]
@@ -565,13 +583,9 @@ elif page == "🤖 Train Model":
         )
 
         if st.button("Train Model"):
-            model = RandomForestRegressor(
-                n_estimators=100,
-                max_depth=5,
-                random_state=42
-            )
-
+            model = RandomForestRegressor(max_depth=5, random_state=42)
             model.fit(X_train, y_train)
+
             y_pred = model.predict(X_test)
 
             st.session_state.model = model
@@ -583,6 +597,53 @@ elif page == "🤖 Train Model":
         st.warning("Upload dataset first")
 
 # ------------------------------
+# MODEL COMPARISON
+# ------------------------------
+elif page == "📊 Model Comparison":
+    if "df" in st.session_state and "target" in st.session_state:
+        df = st.session_state.df
+        target = st.session_state.target
+
+        X = df.drop(columns=[target])
+        y = df[target]
+
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_scaled, y, test_size=0.2, random_state=42
+        )
+
+        if st.button("Compare Models"):
+            models = {
+                "Random Forest": RandomForestRegressor(max_depth=5),
+                "Linear Regression": LinearRegression(),
+                "Gradient Boosting": GradientBoostingRegressor(),
+                "SVM": SVR()
+            }
+
+            results = []
+
+            for name, model in models.items():
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_test)
+
+                r2 = r2_score(y_test, y_pred)
+                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+                results.append([name, r2, rmse])
+
+            result_df = pd.DataFrame(results, columns=["Model", "R2", "RMSE"])
+
+            st.dataframe(result_df)
+
+            best = result_df.sort_values(by="R2", ascending=False).iloc[0]
+            st.success(f"Best Model: {best['Model']}")
+
+    else:
+        st.warning("Train model first")
+
+# ------------------------------
 # EVALUATION
 # ------------------------------
 elif page == "📈 Evaluation":
@@ -592,7 +653,7 @@ elif page == "📈 Evaluation":
         r2 = r2_score(y_test, y_pred)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-        st.metric("R2 Score", round(r2, 3))
+        st.metric("R2", round(r2, 3))
         st.metric("RMSE", round(rmse, 3))
 
         fig, ax = plt.subplots()
@@ -602,57 +663,50 @@ elif page == "📈 Evaluation":
         max_val = max(y_test.max(), y_pred.max())
 
         ax.plot([min_val, max_val], [min_val, max_val], linestyle='--')
-
         st.pyplot(fig)
 
     else:
         st.warning("Train model first")
 
 # ------------------------------
-# AI INSIGHTS (SMART 🔥)
+# AI INSIGHTS
 # ------------------------------
 elif page == "🧠 AI Insights":
-    if "model" in st.session_state:
+    if "model" in st.session_state and "target" in st.session_state:
         model = st.session_state.model
         df = st.session_state.df
+        target = st.session_state.target
+
+        X = df.drop(columns=[target])
 
         if hasattr(model, "feature_importances_"):
             importance = model.feature_importances_
 
             feat_df = pd.DataFrame({
-                "Feature": df.columns[:-1],
+                "Feature": X.columns,
                 "Importance": importance
             }).sort_values(by="Importance", ascending=False)
 
-            st.subheader("Top Influencing Factors")
             st.dataframe(feat_df)
 
-            # SMART INSIGHT LOGIC
-            top_feature = feat_df.iloc[0]["Feature"]
-            direction = "increases" if df[top_feature].corr(df[df.columns[-1]]) > 0 else "decreases"
-
-            st.success(f"Crime {direction} with {top_feature}")
-
-        else:
-            st.error("Model does not support feature importance")
+            top = feat_df.iloc[0]["Feature"]
+            st.success(f"Top factor affecting crime: {top}")
 
     else:
         st.warning("Train model first")
 
 # ------------------------------
-# PREDICTION (FIXED SCALING 🔥)
+# PREDICTION
 # ------------------------------
 elif page == "🎯 Prediction":
     if "model" in st.session_state:
         model = st.session_state.model
         scaler = st.session_state.scaler
-        columns = st.session_state.X_columns
-
-        st.subheader("Enter Data")
+        cols = st.session_state.X_columns
 
         input_data = []
 
-        for col in columns:
+        for col in cols:
             val = st.number_input(col, value=0.0)
             input_data.append(val)
 
